@@ -25,7 +25,8 @@ function App() {
 
     setIsUploading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/upload-cv', formData);
+      // ✅ DIPERBAIKI: Penulisan URL dinamis yang benar
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/upload-cv`, formData);
       setUserId(res.data.user.id); 
     } catch (err) {
       alert("Gagal mengunggah CV. Pastikan server backend menyala.");
@@ -39,7 +40,8 @@ function App() {
     setIsSearching(true);
     setMatchResult(null); 
     try {
-      const res = await axios.get(`http://localhost:5000/api/search-jobs?query=${searchKeyword}`);
+      // ✅ DIPERBAIKI: Penulisan backtick yang benar untuk query
+      const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/search-jobs?query=${searchKeyword}`);
       if (res.data.success) setJobs(res.data.jobs);
     } catch (err) {
       alert("Gagal mengambil data lowongan.");
@@ -59,7 +61,8 @@ function App() {
     }
 
     try {
-      const res = await axios.post('http://localhost:5000/api/analyze-match', {
+      // ✅ DIPERBAIKI: Mengganti localhost dengan variabel cloud
+      const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/analyze-match`, {
         userId: userId,
         jobDescription: job.description 
       });
