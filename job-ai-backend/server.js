@@ -1,7 +1,7 @@
 const app = require('./src/app');
 // 1. Ubah cara import untuk mengambil fungsi connectDB juga
 const { sequelize, connectDB } = require('./src/config/database'); 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 
 const startServer = async () => {
     try {
@@ -13,9 +13,9 @@ const startServer = async () => {
         console.log("✅ Database PostgreSQL tersinkronisasi. Tabel siap digunakan!");
 
         // 4. Jalankan server
-        app.listen(PORT, () => {
-            console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
-        });
+        app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server berhasil jalan di port ${PORT}`);
+});
     } catch (error) {
         console.error("🔥 Gagal terhubung ke database:", error);
     }
