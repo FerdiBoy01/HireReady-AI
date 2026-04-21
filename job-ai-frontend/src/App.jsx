@@ -2,23 +2,22 @@ import { useState } from 'react';
 import axios from 'axios';
 
 function App() {
-  // State untuk Profil/Upload
   const [file, setFile] = useState(null);
   const [userData, setUserData] = useState({ fullName: '', email: '' });
-  const [userId, setUserId] = useState(null); // Disimpan setelah upload sukses
+  const [userId, setUserId] = useState(null); 
   const [isUploading, setIsUploading] = useState(false);
 
-  // State untuk Matching AI
-  const [jobDesc, setJobDesc] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [jobs, setJobs] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const [analyzingJobId, setAnalyzingJobId] = useState(null);
   const [matchResult, setMatchResult] = useState(null);
 
-  // Fungsi 1: Handle Upload CV
   const handleUpload = async () => {
     if (!file || !userData.email || !userData.fullName) {
-      return alert("Silakan lengkapi nama, email, dan pilih file CV (PDF).");
+      return alert("Mohon lengkapi nama, email, dan pilih file CV (PDF).");
     }
-
     const formData = new FormData();
     formData.append('cv', file);
     formData.append('fullName', userData.fullName);
@@ -27,174 +26,319 @@ function App() {
     setIsUploading(true);
     try {
       const res = await axios.post('http://localhost:5000/api/upload-cv', formData);
-      setUserId(res.data.user.id); // Simpan ID user dari database
-      alert("Profil berhasil dibuat! AI telah mengekstrak skill dari CV-mu.");
+      setUserId(res.data.user.id); 
     } catch (err) {
-      alert("Gagal mengunggah CV. Pastikan file adalah PDF.");
+      alert("Gagal mengunggah CV. Pastikan server backend menyala.");
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Fungsi 2: Handle Cek Kecocokan
-  const handleAnalyze = async () => {
-    if (!userId) return alert("Silakan upload CV kamu terlebih dahulu!");
-    if (!jobDesc.trim()) return alert("Masukkan deskripsi lowongan kerja!");
+  const handleSearchJobs = async () => {
+    if (!searchKeyword.trim()) return;
+    setIsSearching(true);
+    setMatchResult(null); 
+    try {
+      const res = await axios.get(`http://localhost:5000/api/search-jobs?query=${searchKeyword}`);
+      if (res.data.success) setJobs(res.data.jobs);
+    } catch (err) {
+      alert("Gagal mengambil data lowongan.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
-    setIsAnalyzing(true);
+  const handleAnalyzeJob = async (job) => {
+    if (!userId) return alert("Silakan unggah Profil CV kamu terlebih dahulu di langkah 1!");
+
+    setAnalyzingJobId(job.id);
+    setMatchResult(null);
+
+    if (window.innerWidth < 1024) {
+      setTimeout(() => document.getElementById('analysis-area')?.scrollIntoView({ behavior: 'smooth' }), 300);
+    }
+
     try {
       const res = await axios.post('http://localhost:5000/api/analyze-match', {
         userId: userId,
-        jobDescription: jobDesc
+        jobDescription: job.description 
       });
-      setMatchResult(res.data.data);
+      
+      setMatchResult({
+        jobDetails: job,
+        analysis: res.data.data
+      });
     } catch (err) {
-      alert("Terjadi kesalahan saat menganalisis kecocokan.");
+      alert("Terjadi kesalahan saat AI menganalisis kecocokan.");
     } finally {
-      setIsAnalyzing(false);
+      setAnalyzingJobId(null);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 md:p-12 font-sans text-gray-800">
-      <header className="max-w-6xl mx-auto mb-10 text-center">
-        <h1 className="text-4xl font-extrabold text-blue-700">JobFit AI Analyst</h1>
-        <p className="text-gray-500 mt-2">Ukur kecocokan karirmu menggunakan kekuatan Artificial Intelligence.</p>
-      </header>
+    <div className="min-h-screen bg-[#f8fafc] font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900 pb-12">
+      
+      {/* NAVBAR */}
+      <nav className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-gradient-to-br from-indigo-600 to-blue-500 text-white p-2 rounded-lg shadow-md shadow-indigo-200">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+            </div>
+            <span className="text-xl font-black tracking-tight text-slate-800">HireReady<span className="text-indigo-600">.AI</span></span>
+          </div>
+          <div className="hidden md:flex items-center gap-2 text-xs font-medium">
+            {userId ? (
+              <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 flex items-center gap-1.5 shadow-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> CV Aktif
+              </span>
+            ) : (
+              <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full border border-slate-200">
+                Menunggu CV...
+              </span>
+            )}
+          </div>
+        </div>
+      </nav>
 
-      <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
         
-        {/* BAGIAN KIRI: PROFIL & UPLOAD */}
-        <section className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h2 className="text-xl font-bold mb-4 flex items-center">
-              <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center mr-2 text-sm">1</span>
-              Lengkapi Profil Kamu
-            </h2>
-            <div className="space-y-4">
-              <input 
-                type="text" placeholder="Nama Lengkap" 
-                className="w-full p-3 border rounded-lg outline-none focus:border-blue-500"
-                onChange={(e) => setUserData({...userData, fullName: e.target.value})}
-              />
-              <input 
-                type="email" placeholder="Email Aktif" 
-                className="w-full p-3 border rounded-lg outline-none focus:border-blue-500"
-                onChange={(e) => setUserData({...userData, email: e.target.value})}
-              />
-              <div className="border-2 border-dashed border-gray-200 p-4 rounded-lg text-center bg-gray-50">
-                <input 
-                  type="file" accept=".pdf" 
-                  className="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                  onChange={(e) => setFile(e.target.files[0])}
-                />
-                <p className="text-xs text-gray-400 mt-2">Hanya menerima file format .PDF</p>
-              </div>
-              <button 
-                onClick={handleUpload}
-                disabled={isUploading || !!userId}
-                className={`w-full py-3 rounded-xl font-bold transition-all ${userId ? 'bg-green-100 text-green-600' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200'}`}
-              >
-                {isUploading ? "AI Sedang Membaca CV..." : userId ? "✓ Profil Tersimpan" : "Upload & Proses CV"}
-              </button>
-            </div>
-          </div>
+        {/* INFORMASI WEB (HERO SECTION) */}
+        <div className="max-w-3xl mb-8">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-800 mb-2">Asisten Karir AI Pribadimu</h1>
+          <p className="text-slate-500 text-sm leading-relaxed">
+            HireReady.AI menggunakan kecerdasan buatan untuk menganalisis kesesuaian antara <strong className="text-slate-700">Keahlian (CV)</strong> Anda dengan <strong className="text-slate-700">Lowongan Pekerjaan Global</strong> secara *real-time*. Unggah CV Anda, cari posisi yang diinginkan, dan biarkan AI kami memberikan persentase kecocokan serta strategi untuk lolos.
+          </p>
+        </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h2 className="text-xl font-bold mb-4 flex items-center">
-              <span className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center mr-2 text-sm">2</span>
-              Detail Lowongan
-            </h2>
-            <textarea
-              className="w-full h-48 p-4 border rounded-xl outline-none focus:border-blue-500 resize-none"
-              placeholder="Tempel (paste) deskripsi pekerjaan atau syarat lowongan di sini..."
-              value={jobDesc}
-              onChange={(e) => setJobDesc(e.target.value)}
-            ></textarea>
-            <button
-              onClick={handleAnalyze}
-              disabled={isAnalyzing}
-              className="w-full mt-4 bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-            >
-              {isAnalyzing ? "Menganalisis Kecocokan..." : "Cek Skor Kecocokan"}
-            </button>
-          </div>
-        </section>
-
-        {/* BAGIAN KANAN: HASIL ANALISIS */}
-        <section className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 min-h-[400px]">
-          <h2 className="text-2xl font-bold mb-6">Hasil Analisis AI</h2>
+        {/* GRID LAYOUT UTAMA */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           
-          {!matchResult && !isAnalyzing && (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
-               <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-4 text-3xl">🤖</div>
-               <p>Belum ada data untuk dianalisis.<br/>Silakan upload CV dan masukkan lowongan.</p>
-            </div>
-          )}
-
-          {isAnalyzing && (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="text-blue-600 font-medium">AI sedang membandingkan skill kamu...</p>
-            </div>
-          )}
-
-          {matchResult && !isAnalyzing && (
-            <div className="animate-in fade-in duration-500">
-              <div className="flex items-center justify-between mb-8 pb-6 border-b">
-                <div>
-                  <p className="text-sm uppercase tracking-wider text-gray-500 font-semibold">Match Score</p>
-                  <p className="text-5xl font-black text-blue-600">{matchResult.match_score}%</p>
+          {/* ================= PANEL KIRI (INPUT & LIST) ================= */}
+          <div className="lg:col-span-5 space-y-6">
+            
+            {/* STEP 1: UPLOAD */}
+            <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+              <h2 className="text-base font-extrabold mb-4 flex items-center gap-2.5 text-slate-800">
+                <span className="bg-indigo-50 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                Data Kandidat
+              </h2>
+              
+              {!userId ? (
+                <div className="space-y-3 relative z-10">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="text" placeholder="Nama Lengkap" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm" onChange={(e) => setUserData({...userData, fullName: e.target.value})} />
+                    <input type="email" placeholder="Email Aktif" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm" onChange={(e) => setUserData({...userData, email: e.target.value})} />
+                  </div>
+                  <div className="border-2 border-dashed border-slate-300 rounded-lg p-2 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-300 transition-all relative">
+                    <input type="file" accept=".pdf" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => setFile(e.target.files[0])} />
+                    <div className="flex items-center justify-center gap-2 p-1.5 pointer-events-none">
+                      <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                      <span className="text-xs font-medium text-slate-500">{file ? file.name : "Pilih file PDF CV"}</span>
+                    </div>
+                  </div>
+                  <button onClick={handleUpload} disabled={isUploading} className="w-full bg-slate-900 text-white p-2.5 rounded-lg text-sm font-bold hover:bg-indigo-600 transition-all disabled:bg-slate-300 flex justify-center items-center gap-2">
+                    {isUploading ? "Mengekstrak Skill..." : "Simpan Profil & Ekstrak AI"}
+                  </button>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm uppercase tracking-wider text-gray-500 font-semibold mb-1">Risk Level</p>
-                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest
-                    ${matchResult.risk_level === 'low' ? 'bg-green-100 text-green-700' : 
-                      matchResult.risk_level === 'medium' ? 'bg-yellow-100 text-yellow-700' : 
-                      'bg-red-100 text-red-700'}`}>
-                    {matchResult.risk_level}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <h3 className="font-bold text-gray-800 mb-2">Kesimpulan Analisis:</h3>
-                <p className="text-gray-600 leading-relaxed text-sm italic">"{matchResult.analysis_summary}"</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="bg-green-50 p-4 rounded-xl">
-                  <h4 className="text-xs font-bold text-green-700 uppercase mb-3">Matched Skills ✓</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {matchResult.matched_skills.map((s, i) => (
-                      <span key={i} className="bg-white px-2 py-1 rounded-md text-xs border border-green-200">{s}</span>
-                    ))}
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-sm">✓</div>
+                  <div>
+                    <h3 className="font-bold text-emerald-800 text-xs">Profil Tersimpan</h3>
+                    <p className="text-[11px] text-emerald-600/80">AI siap mencocokkan datamu dengan lowongan.</p>
                   </div>
                 </div>
-                <div className="bg-red-50 p-4 rounded-xl">
-                  <h4 className="text-xs font-bold text-red-700 uppercase mb-3">Missing Skills ✕</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {matchResult.missing_skills.map((s, i) => (
-                      <span key={i} className="bg-white px-2 py-1 rounded-md text-xs border border-red-200">{s}</span>
-                    ))}
-                  </div>
-                </div>
+              )}
+            </section>
+
+            {/* STEP 2: SEARCH & LIST */}
+            <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 relative overflow-hidden">
+               <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+               <h2 className="text-base font-extrabold mb-4 flex items-center gap-2.5 text-slate-800">
+                <span className="bg-blue-50 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                Cari Lowongan Live
+              </h2>
+              <div className="relative mb-4">
+                <input 
+                  type="text" 
+                  placeholder="Ketik posisi (ex: Frontend, Data...)" 
+                  className="w-full p-2.5 pl-10 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchJobs()}
+                />
+                <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <button onClick={handleSearchJobs} disabled={isSearching} className="absolute right-1.5 top-1.5 bottom-1.5 bg-blue-600 text-white px-4 rounded-md text-xs font-bold hover:bg-blue-700 transition-all">
+                  Cari
+                </button>
               </div>
 
-              <div className="bg-gray-900 p-5 rounded-xl text-white">
-                <h4 className="text-sm font-bold text-blue-400 mb-3">Rekomendasi Karir:</h4>
-                <ul className="space-y-3 text-sm">
-                  {matchResult.recommendations.map((r, i) => (
-                    <li key={i} className="flex items-start">
-                      <span className="text-blue-500 mr-2">•</span> {r}
-                    </li>
-                  ))}
-                </ul>
+              {/* LIST PEKERJAAN (Tinggi dibatasi agar compact) */}
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {jobs.length === 0 && !isSearching && (
+                   <div className="text-center py-6 opacity-60">
+                      <p className="text-xs font-medium text-slate-500">Mulai ketik untuk menemukan impianmu</p>
+                   </div>
+                )}
+                {jobs.map((job) => (
+                  <div key={job.id} onClick={() => !analyzingJobId && handleAnalyzeJob(job)} 
+                       className={`group border p-3.5 rounded-xl transition-all cursor-pointer relative overflow-hidden
+                       ${analyzingJobId === job.id || matchResult?.jobDetails.id === job.id ? 'border-indigo-400 bg-indigo-50/40 ring-2 ring-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm'}`}>
+                    
+                    {analyzingJobId === job.id && <div className="absolute bottom-0 left-0 h-1 bg-indigo-500 scan-line"></div>}
+                    
+                    <h3 className="text-sm font-extrabold text-slate-800 leading-tight mb-1 group-hover:text-indigo-600">{job.title}</h3>
+                    <p className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">{job.company}</p>
+                    <div className="mt-2">
+                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 w-max">
+                        📍 {job.location}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
-        </section>
+            </section>
+          </div>
+
+          {/* ================= PANEL KANAN (HASIL AI) ================= */}
+          <div className="lg:col-span-7 sticky top-24" id="analysis-area">
+            
+            {/* STATE 1: KOSONG */}
+            {!matchResult && !analyzingJobId && (
+              <div className="bg-white border border-slate-200/60 rounded-3xl p-8 text-center min-h-[480px] flex flex-col items-center justify-center shadow-sm">
+                 <div className="w-16 h-16 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-full flex items-center justify-center mb-4 border border-indigo-100">
+                    <span className="text-2xl filter drop-shadow-sm">✨</span>
+                 </div>
+                 <h2 className="text-lg font-extrabold text-slate-800 mb-2">Studio Analisis AI</h2>
+                 <p className="text-slate-500 text-xs max-w-xs leading-relaxed">Pilih salah satu lowongan di sebelah kiri, biarkan agen cerdas kami menghitung persentase kecocokanmu.</p>
+              </div>
+            )}
+
+            {/* STATE 2: LOADING ANIMATION */}
+            {analyzingJobId && !matchResult && (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center min-h-[480px] flex flex-col items-center justify-center shadow-lg relative overflow-hidden">
+                 <div className="absolute inset-0 opacity-10">
+                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]"></div>
+                 </div>
+                 <div className="relative w-24 h-24 mb-6 z-10">
+                    <div className="absolute inset-0 border-[3px] border-slate-700 rounded-full"></div>
+                    <div className="absolute inset-0 border-[3px] border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+                    <div className="absolute inset-2 border-[3px] border-blue-400 rounded-full border-b-transparent animate-[spin_1.5s_linear_infinite_reverse]"></div>
+                    <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">🧠</div>
+                 </div>
+                 <h2 className="text-lg font-black text-white mb-2 z-10">Menganalisis Parameter...</h2>
+                 <p className="text-indigo-200 text-xs animate-pulse z-10 max-w-[250px] mx-auto">Membaca syarat pekerjaan dan mencocokannya dengan data CV-mu.</p>
+              </div>
+            )}
+
+            {/* STATE 3: HASIL */}
+            {matchResult && (
+              <div className="bg-white rounded-3xl shadow-lg overflow-hidden animate-fade-in border border-slate-200">
+                
+                {/* Header Hasil */}
+                <div className="bg-slate-900 p-6 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500 rounded-full filter blur-[60px] opacity-20 -translate-y-1/2 translate-x-1/3"></div>
+                  <p className="text-indigo-400 text-[9px] font-black uppercase tracking-widest mb-1.5 relative z-10">Laporan Kecocokan</p>
+                  <h2 className="text-xl font-black text-white leading-tight relative z-10 pr-8">{matchResult.jobDetails.title}</h2>
+                  <div className="mt-2 relative z-10">
+                    <span className="px-2 py-0.5 bg-white/10 rounded text-[11px] text-white font-semibold">{matchResult.jobDetails.company}</span>
+                  </div>
+                </div>
+
+                <div className="p-6">
+                  
+                  {/* Skor & Risk (Compact) */}
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center text-center">
+                       <p className="text-[9px] text-slate-400 font-black tracking-widest mb-1">MATCH SCORE</p>
+                       <p className="text-4xl font-black text-slate-800 tracking-tight">{matchResult.analysis.match_score}<span className="text-xl text-indigo-500 ml-0.5">%</span></p>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-center items-center text-center">
+                       <p className="text-[9px] text-slate-400 font-black tracking-widest mb-2">TINGKAT RISIKO</p>
+                       <span className={`inline-block px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-widest
+                          ${matchResult.analysis.risk_level === 'low' ? 'bg-emerald-100 text-emerald-700' : 
+                            matchResult.analysis.risk_level === 'medium' ? 'bg-amber-100 text-amber-700' : 
+                            'bg-rose-100 text-rose-700'}`}>
+                          {matchResult.analysis.risk_level}
+                        </span>
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="mb-6 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-indigo-600 text-sm">💡</span>
+                      <h3 className="font-extrabold text-slate-800 text-xs uppercase tracking-wide">Pandangan AI</h3>
+                    </div>
+                    <p className="text-slate-600 text-xs leading-relaxed font-medium">"{matchResult.analysis.analysis_summary}"</p>
+                  </div>
+
+                  {/* Skills Mapping */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Matched Skills
+                      </h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {matchResult.analysis.matched_skills.map((s, i) => (
+                          <span key={i} className="bg-white border border-emerald-200 text-emerald-700 px-2 py-1 rounded-lg text-[10px] font-bold">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-[10px] font-black text-rose-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Missing Skills
+                      </h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {matchResult.analysis.missing_skills.map((s, i) => (
+                          <span key={i} className="bg-slate-50 border border-slate-200 text-slate-500 px-2 py-1 rounded-lg text-[10px] font-bold">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rekomendasi */}
+                  <div className="mb-6">
+                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Saran AI</h4>
+                     <ul className="space-y-2">
+                        {matchResult.analysis.recommendations.map((r, i) => (
+                          <li key={i} className="flex items-start text-xs font-medium text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                            <span className="text-indigo-500 mr-2 leading-none">•</span> {r}
+                          </li>
+                        ))}
+                      </ul>
+                  </div>
+                  
+                  {/* Action */}
+                  <a href={matchResult.jobDetails.redirect_url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full bg-slate-900 hover:bg-indigo-600 text-white text-sm font-bold py-3 rounded-xl transition-all duration-300 shadow-md">
+                    Lamar via Adzuna <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
       </main>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .animate-fade-in { animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .scan-line { animation: scan 1.5s ease-in-out infinite; }
+        @keyframes scan {
+          0% { width: 0%; opacity: 1; }
+          50% { width: 100%; opacity: 0.4; }
+          100% { width: 0%; opacity: 1; right: 0; left: auto; }
+        }
+      `}} />
     </div>
   );
 }

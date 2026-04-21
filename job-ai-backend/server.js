@@ -1,18 +1,23 @@
 const app = require('./src/app');
-const sequelize = require('./src/config/database');
+// 1. Ubah cara import untuk mengambil fungsi connectDB juga
+const { sequelize, connectDB } = require('./src/config/database'); 
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
     try {
-        // Otomatis membuat tabel jika belum ada
-        // await sequelize.sync({ alter: true }); 
-        console.log("Database MySQL terhubung dan tersinkronisasi.");
+        // 2. Panggil fungsi untuk mengetes koneksi
+        await connectDB();
 
+        // 3. Wajib dijalankan agar Sequelize membuat tabel di Supabase!
+        await sequelize.sync({ alter: true }); 
+        console.log("✅ Database PostgreSQL tersinkronisasi. Tabel siap digunakan!");
+
+        // 4. Jalankan server
         app.listen(PORT, () => {
-            console.log(`Server berjalan di http://localhost:${PORT}`);
+            console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
         });
     } catch (error) {
-        console.error("Gagal terhubung ke database:", error);
+        console.error("🔥 Gagal terhubung ke database:", error);
     }
 };
 

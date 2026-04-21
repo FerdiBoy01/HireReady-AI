@@ -1,30 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
 // Import Controllers
 const { checkMatch } = require('../controllers/matchController');
 const { uploadCV } = require('../controllers/userController');
 
-// --- PERBAIKAN: Otomatis buat folder 'uploads' jika belum ada ---
-const uploadDir = 'uploads';
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-// ---------------------------------------------------------------
+// Import Services
+const { fetchJobs } = require('../services/jobService');
 
-// Konfigurasi Multer (Penyimpanan File)
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir + '/'); // Simpan ke folder uploads/
-    },
-    filename: (req, file, cb) => {
-        // Beri nama unik menggunakan timestamp agar tidak bentrok
-        cb(null, Date.now() + path.extname(file.originalname));
-    }
-});
+// --- KONFIGURASI MULTER (CLOUD / MEMORY STORAGE) ---
+// Kita simpan file di RAM (memory) sementara sebelum dilempar ke Azure
+const storage = multer.memoryStorage(); 
 
 const upload = multer({ 
     storage: storage,
@@ -37,10 +24,31 @@ const upload = multer({
     }
 });
 
-// Endpoint untuk Analisis Kecocokan Pekerjaan
+// ==========================================
+// DAFTAR ROUTE / ENDPOINT API
+// ==========================================
+
+// 1. Endpoint untuk Analisis Kecocokan Pekerjaan
 router.post('/analyze-match', checkMatch);
 
-// Endpoint untuk Upload CV & Parsing Profil
+// 2. Endpoint untuk Upload CV (Memory -> Azure -> AI)
 router.post('/upload-cv', upload.single('cv'), uploadCV);
+
+// 3. Endpoint untuk Mencari Lowongan via Adzuna API
+router.get('/search-jobs', async (req, res) => {
+    try {
+        const { query } = req.query;
+        // Jika parameter pencarian kosong, default mencari 'developer'
+        const keyword = query ? query : 'developer';
+        
+        console.log(`🔍 Mengambil data lowongan kerja dengan keyword: ${keyword}`);
+        const jobs = await fetchJobs(keyword);
+        
+        res.status(200).json({ success: true, jobs });
+    } catch (error) {
+        console.error("Gagal di route /search-jobs:", error.message);
+        res.status(500).json({ success: false, error: "Gagal mengambil data lowongan dari server." });
+    }
+});
 
 module.exports = router;

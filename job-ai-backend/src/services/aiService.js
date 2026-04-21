@@ -1,11 +1,81 @@
 require('dotenv').config();
 
-const API_KEY = process.env.GEMINI_API_KEY;
-// Gunakan 1.5-flash karena ini yang kuota gratis (Free Tier)-nya paling aman
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
+
+if (!rawKeys) {
+    console.error("🔥 ERROR KRITIKAL: API Key Gemini tidak ditemukan di file .env!");
+}
+
+const apiKeys = rawKeys.split(',').map(key => key.trim());
+let currentKeyIndex = 0; 
+
+// --- FITUR BARU: Fungsi untuk menghentikan kode (delay) sementara waktu ---
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Fungsi 1: Menganalisis kecocokan profil user dengan Job Description via REST API
+ * Fungsi Manajer Rotasi API dengan Exponential Backoff
+ */
+const fetchWithRotation = async (payload, contextName) => {
+    let attempts = 0;
+    const totalKeys = apiKeys.length;
+    // Kita biarkan mencoba hingga 2x putaran penuh seluruh key
+    const maxRetries = totalKeys * 2; 
+
+    while (attempts < maxRetries) {
+        const currentKey = apiKeys[currentKeyIndex];
+        // Tetap menggunakan gemini-2.5-flash sesuai permintaanmu
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${currentKey}`;
+
+        try {
+            console.log(`[${contextName}] 🧠 Request via Key Index: ${currentKeyIndex + 1}/${totalKeys} | Percobaan: ${attempts + 1}`);
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // Deteksi jika Limit (429) atau Server Overload (503)
+                if (response.status === 429 || response.status === 503) {
+                    console.warn(`⚠️ [WARNING] API Key ke-${currentKeyIndex + 1} Limit/Sibuk (Status: ${response.status}).`);
+                    
+                    // --- FITUR BARU: EXPONENTIAL BACKOFF DELAY ---
+                    // Hitung delay: 2 detik, lalu 4 detik, dst. (Maksimal 10 detik)
+                    const delayMs = Math.min(2000 * Math.pow(2, Math.floor(attempts / totalKeys)), 10000);
+                    console.log(`⏳ Menahan spam loop... Tidur selama ${delayMs / 1000} detik sebelum lanjut...`);
+                    await sleep(delayMs); // Hentikan eksekusi sementara
+
+                    // Pindah key
+                    currentKeyIndex = (currentKeyIndex + 1) % totalKeys;
+                    attempts++;
+                    continue; 
+                }
+                
+                throw new Error(`API Error: ${data.error?.message || response.statusText}`);
+            }
+
+            return data.candidates[0].content.parts[0].text;
+
+        } catch (error) {
+            if (attempts >= maxRetries - 1) {
+                throw new Error(`Gagal total setelah ${maxRetries} percobaan. Server Google sedang down atau semua kuota key habis. Error: ${error.message}`);
+            }
+            console.warn(`⚠️ [WARNING] Kendala jaringan/teknis: ${error.message}`);
+            
+            // Beri jeda 2 detik sebelum ganti key kalau ada error jaringan
+            console.log(`⏳ Delay 2 detik sebelum mencoba key lain...`);
+            await sleep(2000);
+            currentKeyIndex = (currentKeyIndex + 1) % totalKeys;
+            attempts++;
+        }
+    }
+};
+
+/**
+ * Fungsi 1: Menganalisis kecocokan profil user dengan Job Description
  */
 const analyzeJobMatch = async (userProfile, jobDescription) => {
     const systemPrompt = `
@@ -42,22 +112,8 @@ ATURAN OUTPUT HARUS JSON:
     };
 
     try {
-        const response = await fetch(GEMINI_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(`API Error: ${data.error?.message || response.statusText}`);
-        }
-
-        // Mengambil teks balasan dari struktur JSON API Google
-        const aiTextResponse = data.candidates[0].content.parts[0].text;
+        const aiTextResponse = await fetchWithRotation(payload, "Job Match");
         return JSON.parse(aiTextResponse);
-
     } catch (error) {
         console.error("🔥 Error Direct API (Job Match):", error.message);
         throw new Error("Gagal menganalisis kecocokan pekerjaan.");
@@ -79,7 +135,6 @@ FORMAT OUTPUT JSON:
   "tools": ["git", "vscode", "docker"]
 }`;
 
-    // Struktur payload khusus untuk mengirim File Base64 + Teks ke API Google
     const payload = {
         contents: [
             {
@@ -98,25 +153,8 @@ FORMAT OUTPUT JSON:
     };
 
     try {
-        console.log("🧠 Mengirim Request HTTP Direct ke Gemini API...");
-        
-        const response = await fetch(GEMINI_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-
-        // Cek jika Google menolak request kita
-        if (!response.ok) {
-            console.error("🔥 GOOGLE API REJECTED:", data);
-            throw new Error(data.error?.message || "Google API menolak request.");
-        }
-
-        const aiTextResponse = data.candidates[0].content.parts[0].text;
+        const aiTextResponse = await fetchWithRotation(payload, "Parse CV");
         return JSON.parse(aiTextResponse);
-
     } catch (error) {
         console.error("🔥 Error Direct API (Parse CV):", error.message);
         throw new Error(`AI gagal memproses file CV: ${error.message}`);

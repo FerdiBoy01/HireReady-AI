@@ -1,53 +1,38 @@
-const fs = require('fs');
 const UserProfile = require('../models/UserProfile');
 const { parseCVWithAI } = require('../services/aiService');
+const { uploadToAzure } = require('../services/azureService');
 
 const uploadCV = async (req, res) => {
     try {
-        console.log("\n=== 🚀 MULAI PROSES UPLOAD CV (VERSI DIRECT AI) ===");
-        
-        if (!req.file) {
-            return res.status(400).json({ error: "File tidak ditemukan." });
-        }
-        console.log("✅ TAHAP 1: File masuk ->", req.file.path);
+        if (!req.file) return res.status(400).json({ error: "File tidak ditemukan." });
 
         const { fullName, email } = req.body;
 
-        console.log("⏳ TAHAP 2: Mengubah file PDF menjadi Base64...");
-        // Baca file PDF secara langsung dari hardisk
-        const fileBuffer = fs.readFileSync(req.file.path);
-        // Ubah jadi string Base64 agar bisa dikirim via API
-        const base64PDF = fileBuffer.toString('base64');
+        // TAHAP 1: Unggah ke Azure Cloud
+        const azureUrl = await uploadToAzure(req.file);
 
-        console.log("⏳ TAHAP 3: Menyuruh Gemini membaca PDF secara visual...");
-        // Lempar PDF ke AI (Tidak perlu pdf-parse lagi!)
+        // TAHAP 2: Proses AI (Tetap menggunakan buffer dari memori)
+        const base64PDF = req.file.buffer.toString('base64');
         const structuredSkills = await parseCVWithAI(base64PDF);
-        console.log("✅ TAHAP 3: Gemini berhasil merangkum CV!");
-        console.log(structuredSkills);
 
-        console.log("⏳ TAHAP 4: Menyimpan ke Database...");
+        // TAHAP 3: Simpan URL Azure ke Database
         const [user, created] = await UserProfile.findOrCreate({
             where: { email },
             defaults: {
                 full_name: fullName,
                 skills: structuredSkills,
-                cv_file_url: req.file.path
+                cv_file_url: azureUrl // Simpan URL Azure, bukan path lokal
             }
         });
 
         if (!created) {
             user.skills = structuredSkills;
-            user.cv_file_url = req.file.path;
+            user.cv_file_url = azureUrl;
             await user.save();
         }
-        
-        console.log("✅ TAHAP 4: Sukses tersimpan!");
-        console.log("=== 🎉 PROSES SELESAI ===\n");
 
         res.status(200).json({ success: true, user });
-
     } catch (error) {
-        console.error("\n❌ ERROR DETECTED:", error.message);
         res.status(500).json({ error: error.message });
     }
 };

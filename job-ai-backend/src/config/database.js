@@ -1,15 +1,25 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-const sequelize = new Sequelize(
-    process.env.DB_NAME,
-    process.env.DB_USER,
-    process.env.DB_PASS,
-    {
-        host: process.env.DB_HOST,
-        dialect: 'mysql',
-        logging: false, // Ubah ke true jika ingin melihat query SQL di terminal
-    }
-);
+// Menggunakan DATABASE_URL dari Supabase
+const sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: 'postgres',
+    dialectOptions: {
+        ssl: {
+            require: true,
+            rejectUnauthorized: false // Wajib untuk layanan cloud seperti Supabase
+        }
+    },
+    logging: false // Ubah ke console.log jika ingin melihat query SQL yang berjalan
+});
 
-module.exports = sequelize;
+const connectDB = async () => {
+    try {
+        await sequelize.authenticate();
+        console.log('✅ PostgreSQL (Supabase) berhasil terhubung!');
+    } catch (error) {
+        console.error('🔥 Error koneksi PostgreSQL:', error);
+    }
+};
+
+module.exports = { sequelize, connectDB };
