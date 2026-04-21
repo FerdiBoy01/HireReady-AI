@@ -5,7 +5,7 @@ const apiRoutes = require('./routes/api');
 const app = express();
 
 // Middleware
-app.use(cors({ origin: '*'}));
+app.use(cors());
 app.use(express.json()); // Agar bisa membaca req.body berupa JSON
 
 // Routes
