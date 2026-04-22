@@ -161,4 +161,42 @@ FORMAT OUTPUT JSON:
     }
 };
 
-module.exports = { analyzeJobMatch, parseCVWithAI };
+
+/**
+ * Fungsi 3: Merapikan teks lowongan kerja mentah (dari teks/OCR gambar) menjadi JSON
+ */
+const parseJobWithAI = async (rawText) => {
+    const prompt = `
+Tugasmu adalah mengekstrak informasi lowongan kerja dari teks mentah berikut. 
+Teks ini mungkin berasal dari hasil scan gambar (OCR) yang berantakan, typo, atau teks acak.
+Rapikan dan kembalikan HANYA dalam format JSON.
+
+FORMAT OUTPUT JSON:
+{
+  "company": "Nama Perusahaan (isi null jika tidak ada)",
+  "title": "Posisi Pekerjaan",
+  "description": "Deskripsi pekerjaan yang sudah dirapikan",
+  "requirements": ["syarat 1", "syarat 2", "syarat 3"]
+}
+
+TEKS MENTAH:
+"""${rawText}"""
+`;
+
+    const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+    };
+
+    try {
+        // Kita panggil fungsi fetchWithRotation yang sudah kamu buat
+        const aiTextResponse = await fetchWithRotation(payload, "Parse Loker Manual");
+        return JSON.parse(aiTextResponse);
+    } catch (error) {
+        console.error("🔥 Error Direct API (Parse Loker):", error.message);
+        throw new Error(`AI gagal memproses teks loker: ${error.message}`);
+    }
+};
+
+// JANGAN LUPA UPDATE MODULE.EXPORTS DI PALING BAWAH FILE INI!
+module.exports = { analyzeJobMatch, parseCVWithAI, parseJobWithAI };

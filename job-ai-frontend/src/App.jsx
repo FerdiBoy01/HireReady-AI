@@ -2,15 +2,26 @@ import { useState } from 'react';
 import axios from 'axios';
 
 function App() {
+  // STATE STEP 1: CV
   const [file, setFile] = useState(null);
   const [userData, setUserData] = useState({ fullName: '', email: '' });
   const [userId, setUserId] = useState(null); 
   const [isUploading, setIsUploading] = useState(false);
 
+  // STATE STEP 2: TABS & INPUT
+  const [activeTab, setActiveTab] = useState('search'); // 'search' | 'text' | 'image'
+  
+  // State Search (Live)
   const [searchKeyword, setSearchKeyword] = useState('');
   const [jobs, setJobs] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // State Manual (Teks & Gambar)
+  const [manualText, setManualText] = useState('');
+  const [manualImage, setManualImage] = useState(null);
+  const [isProcessingManual, setIsProcessingManual] = useState(false);
+
+  // STATE HASIL AI
   const [analyzingJobId, setAnalyzingJobId] = useState(null);
   const [matchResult, setMatchResult] = useState(null);
 
@@ -25,7 +36,6 @@ function App() {
 
     setIsUploading(true);
     try {
-      // ✅ DIPERBAIKI: Penulisan URL dinamis yang benar
       const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/upload-cv`, formData);
       setUserId(res.data.user.id); 
     } catch (err) {
@@ -40,7 +50,6 @@ function App() {
     setIsSearching(true);
     setMatchResult(null); 
     try {
-      // ✅ DIPERBAIKI: Penulisan backtick yang benar untuk query
       const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/search-jobs?query=${searchKeyword}`);
       if (res.data.success) setJobs(res.data.jobs);
     } catch (err) {
@@ -50,18 +59,75 @@ function App() {
     }
   };
 
-  const handleAnalyzeJob = async (job) => {
+  // FUNGSI BARU: Proses Gambar / Teks Manual
+  const handleProcessManual = async (type) => {
     if (!userId) return alert("Silakan unggah Profil CV kamu terlebih dahulu di langkah 1!");
-
-    setAnalyzingJobId(job.id);
+    
+    setIsProcessingManual(true);
     setMatchResult(null);
+    let extractedData = null;
 
     if (window.innerWidth < 1024) {
       setTimeout(() => document.getElementById('analysis-area')?.scrollIntoView({ behavior: 'smooth' }), 300);
     }
 
     try {
-      // ✅ DIPERBAIKI: Mengganti localhost dengan variabel cloud
+      if (type === 'text') {
+        if (!manualText.trim()) return alert("Teks lowongan tidak boleh kosong!");
+        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/process-manual-job`, {
+          type: 'text',
+          manualText: manualText
+        });
+        extractedData = res.data.data;
+      } else if (type === 'image') {
+        if (!manualImage) return alert("Pilih gambar poster lowongan terlebih dahulu!");
+        const formData = new FormData();
+        formData.append('type', 'image');
+        formData.append('file', manualImage); // field 'file' sesuai multer backend
+        
+        const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/process-manual-job`, formData);
+        extractedData = res.data.data;
+      }
+
+      // Jika berhasil diekstrak, kita rakit jadi objek "Job Buatan" untuk dianalisis
+      if (extractedData) {
+        const mockJob = {
+          id: 'manual-' + Date.now(), // ID unik buatan
+          title: extractedData.title || 'Posisi Tidak Spesifik',
+          company: extractedData.company || 'Perusahaan Input Manual',
+          location: 'Data Manual',
+          // Gabungkan deskripsi dan syarat untuk dikirim ke Gemini Matcher
+          description: `Deskripsi: ${extractedData.description}\n\nPersyaratan: ${extractedData.requirements?.join(', ')}`,
+          redirect_url: null // Null karena bukan dari Adzuna
+        };
+
+        // Langsung panggil fungsi pencocokan yang sudah ada!
+        await handleAnalyzeJob(mockJob);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal mengekstrak data manual. Pastikan server nyala dan file sesuai.");
+    } finally {
+      setIsProcessingManual(false);
+    }
+  };
+
+  const handleAnalyzeJob = async (job) => {
+    if (!userId) return alert("Silakan unggah Profil CV kamu terlebih dahulu di langkah 1!");
+
+    setAnalyzingJobId(job.id);
+    if (job.id.toString().startsWith('manual-')) {
+       // Jangan reset setMatchResult kalau ini dipanggil dari handleProcessManual, 
+       // karena biar animasinya mulus
+    } else {
+       setMatchResult(null);
+    }
+
+    if (window.innerWidth < 1024 && !job.id.toString().startsWith('manual-')) {
+      setTimeout(() => document.getElementById('analysis-area')?.scrollIntoView({ behavior: 'smooth' }), 300);
+    }
+
+    try {
       const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/analyze-match`, {
         userId: userId,
         jobDescription: job.description 
@@ -106,11 +172,11 @@ function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
         
-        {/* INFORMASI WEB (HERO SECTION) */}
+        {/* HERO SECTION */}
         <div className="max-w-3xl mb-8">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-800 mb-2">Asisten Karir AI Pribadimu</h1>
           <p className="text-slate-500 text-sm leading-relaxed">
-            HireReady.AI menggunakan kecerdasan buatan untuk menganalisis kesesuaian antara <strong className="text-slate-700">Keahlian (CV)</strong> Anda dengan <strong className="text-slate-700">Lowongan Pekerjaan Global</strong> secara *real-time*. Unggah CV Anda, cari posisi yang diinginkan, dan biarkan AI kami memberikan persentase kecocokan serta strategi untuk lolos.
+            HireReady.AI menggunakan kecerdasan buatan untuk menganalisis kesesuaian antara <strong className="text-slate-700">Keahlian (CV)</strong> Anda dengan <strong className="text-slate-700">Lowongan Pekerjaan Global</strong> secara *real-time*.
           </p>
         </div>
 
@@ -120,7 +186,7 @@ function App() {
           {/* ================= PANEL KIRI (INPUT & LIST) ================= */}
           <div className="lg:col-span-5 space-y-6">
             
-            {/* STEP 1: UPLOAD */}
+            {/* STEP 1: UPLOAD CV */}
             <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 relative overflow-hidden">
               <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
               <h2 className="text-base font-extrabold mb-4 flex items-center gap-2.5 text-slate-800">
@@ -156,52 +222,78 @@ function App() {
               )}
             </section>
 
-            {/* STEP 2: SEARCH & LIST */}
+            {/* STEP 2: MULTI-INPUT LOKER */}
             <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 relative overflow-hidden">
                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
                <h2 className="text-base font-extrabold mb-4 flex items-center gap-2.5 text-slate-800">
                 <span className="bg-blue-50 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
-                Cari Lowongan Live
+                Pilih Lowongan
               </h2>
-              <div className="relative mb-4">
-                <input 
-                  type="text" 
-                  placeholder="Ketik posisi (ex: Frontend, Data...)" 
-                  className="w-full p-2.5 pl-10 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearchJobs()}
-                />
-                <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <button onClick={handleSearchJobs} disabled={isSearching} className="absolute right-1.5 top-1.5 bottom-1.5 bg-blue-600 text-white px-4 rounded-md text-xs font-bold hover:bg-blue-700 transition-all">
-                  Cari
-                </button>
+
+              {/* TABS NAVIGATION */}
+              <div className="flex bg-slate-100 p-1 rounded-lg mb-4">
+                 <button onClick={() => setActiveTab('search')} className={`flex-1 text-[11px] sm:text-xs font-bold py-2 rounded-md transition-all ${activeTab === 'search' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>🔍 Cari Live</button>
+                 <button onClick={() => setActiveTab('text')} className={`flex-1 text-[11px] sm:text-xs font-bold py-2 rounded-md transition-all ${activeTab === 'text' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>📝 Copas Teks</button>
+                 <button onClick={() => setActiveTab('image')} className={`flex-1 text-[11px] sm:text-xs font-bold py-2 rounded-md transition-all ${activeTab === 'image' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>📸 Foto Poster</button>
               </div>
 
-              {/* LIST PEKERJAAN (Tinggi dibatasi agar compact) */}
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {jobs.length === 0 && !isSearching && (
-                   <div className="text-center py-6 opacity-60">
-                      <p className="text-xs font-medium text-slate-500">Mulai ketik untuk menemukan impianmu</p>
-                   </div>
-                )}
-                {jobs.map((job) => (
-                  <div key={job.id} onClick={() => !analyzingJobId && handleAnalyzeJob(job)} 
-                       className={`group border p-3.5 rounded-xl transition-all cursor-pointer relative overflow-hidden
-                       ${analyzingJobId === job.id || matchResult?.jobDetails.id === job.id ? 'border-indigo-400 bg-indigo-50/40 ring-2 ring-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm'}`}>
-                    
-                    {analyzingJobId === job.id && <div className="absolute bottom-0 left-0 h-1 bg-indigo-500 scan-line"></div>}
-                    
-                    <h3 className="text-sm font-extrabold text-slate-800 leading-tight mb-1 group-hover:text-indigo-600">{job.title}</h3>
-                    <p className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">{job.company}</p>
-                    <div className="mt-2">
-                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 w-max">
-                        📍 {job.location}
-                      </span>
-                    </div>
+              {/* TAB CONTENT: SEARCH */}
+              {activeTab === 'search' && (
+                <div>
+                  <div className="relative mb-4">
+                    <input type="text" placeholder="Ketik posisi (ex: Frontend, Data...)" 
+                      className="w-full p-2.5 pl-10 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm"
+                      value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearchJobs()} />
+                    <svg className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <button onClick={handleSearchJobs} disabled={isSearching} className="absolute right-1.5 top-1.5 bottom-1.5 bg-blue-600 text-white px-4 rounded-md text-xs font-bold hover:bg-blue-700 transition-all">
+                      Cari
+                    </button>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                    {jobs.length === 0 && !isSearching && (
+                      <div className="text-center py-6 opacity-60"><p className="text-xs font-medium text-slate-500">Mulai ketik untuk mencari di Adzuna</p></div>
+                    )}
+                    {jobs.map((job) => (
+                      <div key={job.id} onClick={() => !analyzingJobId && handleAnalyzeJob(job)} 
+                           className={`group border p-3.5 rounded-xl transition-all cursor-pointer relative overflow-hidden
+                           ${analyzingJobId === job.id || matchResult?.jobDetails.id === job.id ? 'border-indigo-400 bg-indigo-50/40 ring-2 ring-indigo-50' : 'border-slate-200 bg-white hover:border-indigo-200 hover:shadow-sm'}`}>
+                        {analyzingJobId === job.id && <div className="absolute bottom-0 left-0 h-1 bg-indigo-500 scan-line"></div>}
+                        <h3 className="text-sm font-extrabold text-slate-800 leading-tight mb-1 group-hover:text-indigo-600">{job.title}</h3>
+                        <p className="text-[11px] font-bold tracking-wide text-slate-500 uppercase">{job.company}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB CONTENT: TEXT */}
+              {activeTab === 'text' && (
+                <div className="animate-fade-in space-y-3">
+                   <textarea 
+                      placeholder="Paste deskripsi lowongan kerja di sini dari LinkedIn, WA, dll..." 
+                      className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 text-sm resize-none"
+                      value={manualText} onChange={(e) => setManualText(e.target.value)}
+                   ></textarea>
+                   <button onClick={() => handleProcessManual('text')} disabled={isProcessingManual} className="w-full bg-blue-600 text-white p-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 transition-all disabled:bg-slate-300">
+                     {isProcessingManual ? "AI Sedang Membaca..." : "Ekstrak & Analisis Teks"}
+                   </button>
+                </div>
+              )}
+
+              {/* TAB CONTENT: IMAGE */}
+              {activeTab === 'image' && (
+                <div className="animate-fade-in space-y-3">
+                   <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 bg-slate-50 hover:bg-blue-50/50 hover:border-blue-300 transition-all relative flex flex-col items-center justify-center text-center h-40">
+                    <input type="file" accept="image/jpeg, image/png, image/jpg" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => setManualImage(e.target.files[0])} />
+                    <svg className="w-8 h-8 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <span className="text-xs font-bold text-slate-600">{manualImage ? manualImage.name : "Klik / Drag Poster Loker (JPG/PNG)"}</span>
+                    {!manualImage && <span className="text-[10px] text-slate-400 mt-1">AI akan mengekstrak teks otomatis via OCR</span>}
+                  </div>
+                   <button onClick={() => handleProcessManual('image')} disabled={isProcessingManual} className="w-full bg-blue-600 text-white p-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 transition-all disabled:bg-slate-300">
+                     {isProcessingManual ? "Memproses Gambar..." : "Scan Poster & Analisis"}
+                   </button>
+                </div>
+              )}
             </section>
           </div>
 
@@ -209,18 +301,18 @@ function App() {
           <div className="lg:col-span-7 sticky top-24" id="analysis-area">
             
             {/* STATE 1: KOSONG */}
-            {!matchResult && !analyzingJobId && (
+            {!matchResult && !analyzingJobId && !isProcessingManual && (
               <div className="bg-white border border-slate-200/60 rounded-3xl p-8 text-center min-h-[480px] flex flex-col items-center justify-center shadow-sm">
                  <div className="w-16 h-16 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-full flex items-center justify-center mb-4 border border-indigo-100">
                     <span className="text-2xl filter drop-shadow-sm">✨</span>
                  </div>
                  <h2 className="text-lg font-extrabold text-slate-800 mb-2">Studio Analisis AI</h2>
-                 <p className="text-slate-500 text-xs max-w-xs leading-relaxed">Pilih salah satu lowongan di sebelah kiri, biarkan agen cerdas kami menghitung persentase kecocokanmu.</p>
+                 <p className="text-slate-500 text-xs max-w-xs leading-relaxed">Pilih loker, paste teks, atau upload poster. Biarkan agen cerdas kami menghitung persentase kecocokanmu.</p>
               </div>
             )}
 
             {/* STATE 2: LOADING ANIMATION */}
-            {analyzingJobId && !matchResult && (
+            {(analyzingJobId || isProcessingManual) && !matchResult && (
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center min-h-[480px] flex flex-col items-center justify-center shadow-lg relative overflow-hidden">
                  <div className="absolute inset-0 opacity-10">
                     <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]"></div>
@@ -231,16 +323,18 @@ function App() {
                     <div className="absolute inset-2 border-[3px] border-blue-400 rounded-full border-b-transparent animate-[spin_1.5s_linear_infinite_reverse]"></div>
                     <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">🧠</div>
                  </div>
-                 <h2 className="text-lg font-black text-white mb-2 z-10">Menganalisis Parameter...</h2>
-                 <p className="text-indigo-200 text-xs animate-pulse z-10 max-w-[250px] mx-auto">Membaca syarat pekerjaan dan mencocokannya dengan data CV-mu.</p>
+                 <h2 className="text-lg font-black text-white mb-2 z-10">
+                   {isProcessingManual ? "Mengekstrak Data Manual..." : "Menganalisis Parameter..."}
+                 </h2>
+                 <p className="text-indigo-200 text-xs animate-pulse z-10 max-w-[250px] mx-auto">
+                   {isProcessingManual ? "AI sedang membaca teks atau poster loker yang kamu masukkan." : "Membaca syarat pekerjaan dan mencocokannya dengan data CV-mu."}
+                 </p>
               </div>
             )}
 
             {/* STATE 3: HASIL */}
             {matchResult && (
               <div className="bg-white rounded-3xl shadow-lg overflow-hidden animate-fade-in border border-slate-200">
-                
-                {/* Header Hasil */}
                 <div className="bg-slate-900 p-6 relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500 rounded-full filter blur-[60px] opacity-20 -translate-y-1/2 translate-x-1/3"></div>
                   <p className="text-indigo-400 text-[9px] font-black uppercase tracking-widest mb-1.5 relative z-10">Laporan Kecocokan</p>
@@ -251,7 +345,6 @@ function App() {
                 </div>
 
                 <div className="p-6">
-                  
                   {/* Skor & Risk (Compact) */}
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col items-center justify-center text-center">
@@ -314,15 +407,16 @@ function App() {
                       </ul>
                   </div>
                   
-                  {/* Action */}
-                  <a href={matchResult.jobDetails.redirect_url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full bg-slate-900 hover:bg-indigo-600 text-white text-sm font-bold py-3 rounded-xl transition-all duration-300 shadow-md">
-                    Lamar via Adzuna <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                  </a>
+                  {/* Action - Sembunyikan tombol "Lamar via Adzuna" jika data dari input manual */}
+                  {matchResult.jobDetails.redirect_url && (
+                    <a href={matchResult.jobDetails.redirect_url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full bg-slate-900 hover:bg-indigo-600 text-white text-sm font-bold py-3 rounded-xl transition-all duration-300 shadow-md">
+                      Lamar via Adzuna <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    </a>
+                  )}
                 </div>
               </div>
             )}
           </div>
-
         </div>
       </main>
 
