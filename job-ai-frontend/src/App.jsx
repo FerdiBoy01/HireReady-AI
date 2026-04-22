@@ -1,7 +1,15 @@
 import { useState } from 'react';
+import Maintenance from './Maintenance';
 import axios from 'axios';
 
 function App() {
+
+ //maintenance
+  const isMaintenanceMode = import.meta.env.VITE_MAINTENANCE_MODE === 'true';
+
+  if (isMaintenanceMode) {
+    return <Maintenance />;
+  }
   // STATE STEP 1: CV
   const [file, setFile] = useState(null);
   const [userData, setUserData] = useState({ fullName: '', email: '' });
