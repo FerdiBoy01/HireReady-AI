@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import Maintenance from './Maintenance';
+import Maintenance from './components/Maintenance';
 import axios from 'axios';
 
 function App() {
